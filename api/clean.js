@@ -9,24 +9,23 @@ const HEADERS = {
 
 export default async function handler(req, res) {
   const url = req.query.url;
-
   if (!url) return res.status(400).send('Missing url');
 
-  const isRelative = url.startsWith('/');
-
-  // If it's just a path (e.g. /v2/player.js), let your frontend reconstruct full URL
-  const fetchUrl = isRelative
-    ? req.headers['x-original-host'] // optional, if you capture it client-side
-      ? `https://${req.headers['x-original-host']}${url}`
-      : null // your frontend will reconstruct it
-    : url;
+  const isFullUrl = url.startsWith('http');
+  const isHtmlRequest = url.endsWith('.html') || !url.includes('.');
 
   try {
-    if (!fetchUrl && isRelative) {
-      return res.status(400).send('Cannot resolve relative URL without original domain');
+    if (!isFullUrl) {
+      // It's a relative asset path (e.g. /v2/embed/movie/1137 or /v2/player.js)
+      // Your frontend should construct: origin + url and call this again
+      return res.status(200).json({
+        type: 'asset',
+        path: url,
+        message: 'Relative path — let frontend reconstruct full URL using origin',
+      });
     }
 
-    const response = await fetch(fetchUrl, { headers: HEADERS });
+    const response = await fetch(url, { headers: HEADERS });
     const contentType = response.headers.get('content-type') || 'application/octet-stream';
     res.setHeader('Content-Type', contentType);
 
@@ -34,21 +33,19 @@ export default async function handler(req, res) {
       const html = await response.text();
       const $ = cheerio.load(html);
 
+      // Rewrite asset URLs to go through clean again
       $('script[src], link[href], img[src], iframe[src]').each((_, el) => {
         const attr = el.name === 'link' ? 'href' : 'src';
         const original = $(el).attr(attr);
-        if (original && !original.startsWith('data:')) {
-          // Don't touch full URLs like http:// or https://
-          if (!original.startsWith('http')) {
-            $(el).attr(attr, `/api/clean?url=${original}`);
-          }
+        if (original && !original.startsWith('data:') && !original.startsWith('http')) {
+          $(el).attr(attr, `/api/clean?url=${original}`);
         }
       });
 
       return res.status(200).send($.html());
     }
 
-    // For images, JS, etc.
+    // If it's not HTML (like .js, .png, etc.), just return the raw buffer
     const buffer = await response.arrayBuffer();
     res.status(200).send(Buffer.from(buffer));
   } catch (err) {
