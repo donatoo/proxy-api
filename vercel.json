@@ -2,6 +2,14 @@
   "version": 2,
   "rewrites": [
     {
+      "source": "/api/asset",
+      "destination": "/api/asset"
+    },
+    {
+      "source": "/api/clean",
+      "destination": "/api/clean"
+    },
+    {
       "source": "/(.*)",
       "destination": "/api/clean?url=/$1"
     }
