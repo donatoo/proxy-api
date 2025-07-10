@@ -10,6 +10,7 @@ const HEADERS = {
 
 function stripAds(html, baseUrl) {
   const $ = cheerio.load(html);
+  const baseHost = new URL(baseUrl).hostname;
 
   // Remove obfuscated ad scripts
   $('script').each((_, el) => {
@@ -25,18 +26,36 @@ function stripAds(html, baseUrl) {
     }
   });
 
+  // Remove hidden iframe injectors
   $('iframe').each((_, el) => {
-    if ($(el).attr('style')?.includes('visibility:hidden')) {
+    const style = $(el).attr('style') || '';
+    if (style.includes('visibility:hidden') || style.includes('display:none')) {
       $(el).remove();
     }
   });
 
+  // Rewrite static asset URLs to proxy
   $('link[href], script[src], img[src]').each((_, el) => {
     const attr = el.name === 'link' ? 'href' : 'src';
     const original = $(el).attr(attr);
-    if (original && !original.startsWith('data:')) {
-      const newUrl = new URL(original, baseUrl).href;
-      $(el).attr(attr, `/api/asset?url=${encodeURIComponent(newUrl)}`);
+    if (!original || original.startsWith('data:')) return;
+
+    try {
+      const resolved = new URL(original, baseUrl).href;
+      const ext = resolved.split('.').pop().split('?')[0].toLowerCase();
+      const assetExtensions = ['js', 'css', 'jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'woff', 'woff2', 'ttf'];
+
+      const isAsset = assetExtensions.includes(ext);
+      const isOwnHost = new URL(resolved).hostname === baseHost;
+
+      if (isAsset && !resolved.includes('proxy-apis.vercel.app')) {
+        $(el).attr(attr, `/api/asset?url=${encodeURIComponent(resolved)}`);
+      } else {
+        // Leave original for embeds or non-assets
+        $(el).attr(attr, resolved);
+      }
+    } catch (e) {
+      // Invalid URL – skip
     }
   });
 
