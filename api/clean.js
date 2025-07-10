@@ -1,7 +1,5 @@
-// /api/clean.js
-
 import fetch from 'node-fetch';
-import cheerio from 'cheerio';
+import * as cheerio from 'cheerio';
 import { URL } from 'url';
 
 const HEADERS = {
@@ -13,7 +11,7 @@ const HEADERS = {
 function stripAds(html, baseUrl) {
   const $ = cheerio.load(html);
 
-  // Remove Cloudflare obfuscated script tags
+  // Remove obfuscated ad scripts
   $('script').each((_, el) => {
     const src = $(el).attr('src');
     const inner = $(el).html();
@@ -27,14 +25,12 @@ function stripAds(html, baseUrl) {
     }
   });
 
-  // Remove hidden iframe that injects challenge script
   $('iframe').each((_, el) => {
     if ($(el).attr('style')?.includes('visibility:hidden')) {
       $(el).remove();
     }
   });
 
-  // Rewrite static asset URLs to go through proxy
   $('link[href], script[src], img[src]').each((_, el) => {
     const attr = el.name === 'link' ? 'href' : 'src';
     const original = $(el).attr(attr);
