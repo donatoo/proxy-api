@@ -1,5 +1,3 @@
-// /api/asset.js
-
 import fetch from 'node-fetch';
 
 const HEADERS = {
