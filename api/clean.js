@@ -1,4 +1,4 @@
-import * as cheerio from 'cheerio'; // ✅ FIXED
+import * as cheerio from 'cheerio';
 import { URL } from 'url';
 
 const HEADERS = {
@@ -10,25 +10,23 @@ const HEADERS = {
 function stripAds(html, baseUrl) {
   const $ = cheerio.load(html);
 
+  // Only remove known Cloudflare/tracker scripts, keep functional JS
   $('script').each((_, el) => {
-    const src = $(el).attr('src');
-    const inner = $(el).html();
+    const src = $(el).attr('src') || '';
+    const inner = $(el).html() || '';
     if (
-      (src && src.includes('/cdn-cgi/')) ||
-      (src && src.includes('cloudflareinsights.com')) ||
-      (inner && inner.includes('__CF$cv$params')) ||
-      (inner && inner.length > 1000 && inner.includes('split("'))
+      src.includes('/cdn-cgi/') ||
+      src.includes('cloudflareinsights.com') ||
+      inner.includes('__CF$cv$params')
     ) {
       $(el).remove();
     }
   });
 
-  $('iframe').each((_, el) => {
-    if ($(el).attr('style')?.includes('visibility:hidden')) {
-      $(el).remove();
-    }
-  });
+  // Do not remove iframes — some video players use them
+  // Optionally, you can filter specific bad ones if needed
 
+  // Proxy static assets
   $('link[href], script[src], img[src]').each((_, el) => {
     const attr = el.name === 'link' ? 'href' : 'src';
     const original = $(el).attr(attr);
