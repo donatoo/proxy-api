@@ -8,11 +8,22 @@ const HEADERS = {
   Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
 };
 
+const STATIC_EXTENSIONS = ['.js', '.css', '.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.woff', '.woff2', '.ttf'];
+
+function isStaticAsset(urlString) {
+  try {
+    const url = new URL(urlString);
+    return STATIC_EXTENSIONS.some((ext) => url.pathname.endsWith(ext));
+  } catch {
+    return false;
+  }
+}
+
 function stripAds(html, baseUrl) {
   const $ = cheerio.load(html);
   const baseHost = new URL(baseUrl).hostname;
 
-  // Remove obfuscated ad scripts
+  // Remove Cloudflare or suspicious scripts
   $('script').each((_, el) => {
     const src = $(el).attr('src');
     const inner = $(el).html();
@@ -26,7 +37,7 @@ function stripAds(html, baseUrl) {
     }
   });
 
-  // Remove hidden iframe injectors
+  // Remove invisible iframes
   $('iframe').each((_, el) => {
     const style = $(el).attr('style') || '';
     if (style.includes('visibility:hidden') || style.includes('display:none')) {
@@ -34,28 +45,28 @@ function stripAds(html, baseUrl) {
     }
   });
 
-  // Rewrite static asset URLs to proxy
-  $('link[href], script[src], img[src]').each((_, el) => {
-    const attr = el.name === 'link' ? 'href' : 'src';
+  // Rewrite static asset URLs only (images, js, css)
+  $('[src], [href]').each((_, el) => {
+    const attr = el.attribs.src ? 'src' : 'href';
     const original = $(el).attr(attr);
     if (!original || original.startsWith('data:')) return;
 
     try {
       const resolved = new URL(original, baseUrl).href;
-      const ext = resolved.split('.').pop().split('?')[0].toLowerCase();
-      const assetExtensions = ['js', 'css', 'jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'woff', 'woff2', 'ttf'];
+      const resolvedHost = new URL(resolved).hostname;
 
-      const isAsset = assetExtensions.includes(ext);
-      const isOwnHost = new URL(resolved).hostname === baseHost;
-
-      if (isAsset && !resolved.includes('proxy-apis.vercel.app')) {
-        $(el).attr(attr, `/api/asset?url=${encodeURIComponent(resolved)}`);
+      if (
+        isStaticAsset(resolved) &&
+        resolvedHost !== 'proxy-apis.vercel.app' // prevent recursive
+      ) {
+        const proxied = `/api/asset?url=${encodeURIComponent(resolved)}`;
+        $(el).attr(attr, proxied);
       } else {
-        // Leave original for embeds or non-assets
+        // Leave original full path (especially iframe, embeds)
         $(el).attr(attr, resolved);
       }
     } catch (e) {
-      // Invalid URL – skip
+      // invalid URL — skip
     }
   });
 
