@@ -1,32 +1,35 @@
+// /api/clean.js
 import * as cheerio from 'cheerio';
-import { URL } from 'url';
+import fetch from 'node-fetch';
 
 const HEADERS = {
   'User-Agent':
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+  Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
 };
 
 function stripAds(html, baseUrl) {
   const $ = cheerio.load(html);
 
-  // Only remove known Cloudflare/tracker scripts, keep functional JS
   $('script').each((_, el) => {
-    const src = $(el).attr('src') || '';
-    const inner = $(el).html() || '';
+    const src = $(el).attr('src');
+    const inner = $(el).html();
     if (
-      src.includes('/cdn-cgi/') ||
-      src.includes('cloudflareinsights.com') ||
-      inner.includes('__CF$cv$params')
+      (src && src.includes('/cdn-cgi/')) ||
+      (src && src.includes('cloudflareinsights.com')) ||
+      (inner && inner.includes('__CF$cv$params')) ||
+      (inner && inner.length > 1000 && inner.includes('split("'))
     ) {
       $(el).remove();
     }
   });
 
-  // Do not remove iframes — some video players use them
-  // Optionally, you can filter specific bad ones if needed
+  $('iframe').each((_, el) => {
+    if ($(el).attr('style')?.includes('visibility:hidden')) {
+      $(el).remove();
+    }
+  });
 
-  // Proxy static assets
   $('link[href], script[src], img[src]').each((_, el) => {
     const attr = el.name === 'link' ? 'href' : 'src';
     const original = $(el).attr(attr);
@@ -40,17 +43,17 @@ function stripAds(html, baseUrl) {
 }
 
 export default async function handler(req, res) {
-  const target = req.query.url;
-  if (!target) return res.status(400).send('Missing URL');
+  const { url } = req.query;
+  if (!url) return res.status(400).send('Missing URL');
 
   try {
-    const response = await fetch(target, { headers: HEADERS });
+    const response = await fetch(url, { headers: HEADERS });
     const html = await response.text();
-    const cleaned = stripAds(html, target);
+    const cleaned = stripAds(html, url);
     res.setHeader('Content-Type', 'text/html');
-    res.send(cleaned);
+    res.status(200).send(cleaned);
   } catch (err) {
-    console.error('ERROR:', err);
-    res.status(500).send('Failed to fetch or clean page.');
+    console.error(err);
+    res.status(500).send('Error fetching target');
   }
 }
