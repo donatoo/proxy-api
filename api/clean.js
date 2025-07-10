@@ -1,55 +1,60 @@
 import fetch from 'node-fetch';
 import * as cheerio from 'cheerio';
+import { URL } from 'url';
 
 const HEADERS = {
   'User-Agent':
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-  Accept: '*/*',
+  Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
 };
 
-export default async function handler(req, res) {
-  const url = req.query.url;
-  if (!url) return res.status(400).send('Missing url');
+function stripAds(html, baseUrl) {
+  const $ = cheerio.load(html);
 
-  const isFullUrl = url.startsWith('http');
-  const isHtmlRequest = url.endsWith('.html') || !url.includes('.');
+  $('script').each((_, el) => {
+    const src = $(el).attr('src');
+    const inner = $(el).html();
+    if (
+      (src && src.includes('/cdn-cgi/')) ||
+      (src && src.includes('cloudflareinsights.com')) ||
+      (inner && inner.includes('__CF$cv$params')) ||
+      (inner && inner.length > 1000 && inner.includes('split("'))
+    ) {
+      $(el).remove();
+    }
+  });
+
+  $('iframe').each((_, el) => {
+    if ($(el).attr('style')?.includes('visibility:hidden')) {
+      $(el).remove();
+    }
+  });
+
+  // Rewrite asset URLs to go through /api/asset
+  $('link[href], script[src], img[src], iframe[src]').each((_, el) => {
+    const attr = el.name === 'link' ? 'href' : 'src';
+    const original = $(el).attr(attr);
+    if (original && !original.startsWith('data:')) {
+      const newUrl = new URL(original, baseUrl).href;
+      $(el).attr(attr, `/api/asset?url=${encodeURIComponent(newUrl)}`);
+    }
+  });
+
+  return $.html();
+}
+
+export default async function handler(req, res) {
+  const target = req.query.url;
+  if (!target) return res.status(400).send('Missing URL');
 
   try {
-    if (!isFullUrl) {
-      // It's a relative asset path (e.g. /v2/embed/movie/1137 or /v2/player.js)
-      // Your frontend should construct: origin + url and call this again
-      return res.status(200).json({
-        type: 'asset',
-        path: url,
-        message: 'Relative path — let frontend reconstruct full URL using origin',
-      });
-    }
-
-    const response = await fetch(url, { headers: HEADERS });
-    const contentType = response.headers.get('content-type') || 'application/octet-stream';
-    res.setHeader('Content-Type', contentType);
-
-    if (contentType.includes('text/html')) {
-      const html = await response.text();
-      const $ = cheerio.load(html);
-
-      // Rewrite asset URLs to go through clean again
-      $('script[src], link[href], img[src], iframe[src]').each((_, el) => {
-        const attr = el.name === 'link' ? 'href' : 'src';
-        const original = $(el).attr(attr);
-        if (original && !original.startsWith('data:') && !original.startsWith('http')) {
-          $(el).attr(attr, `/api/clean?url=${original}`);
-        }
-      });
-
-      return res.status(200).send($.html());
-    }
-
-    // If it's not HTML (like .js, .png, etc.), just return the raw buffer
-    const buffer = await response.arrayBuffer();
-    res.status(200).send(Buffer.from(buffer));
+    const response = await fetch(target, { headers: HEADERS });
+    const html = await response.text();
+    const cleaned = stripAds(html, target);
+    res.setHeader('Content-Type', 'text/html');
+    res.status(200).send(cleaned);
   } catch (err) {
-    console.error('Fetch error:', err.message);
-    res.status(500).send('Failed to proxy content');
+    console.error('ERROR:', err.message);
+    res.status(500).send('Failed to fetch or clean page.');
   }
 }
