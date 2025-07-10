@@ -11,7 +11,7 @@ const HEADERS = {
 function stripAds(html, baseUrl) {
   const $ = cheerio.load(html);
 
-  // Remove obfuscated ad scripts
+  // Remove ad-related or obfuscated Cloudflare scripts
   $('script').each((_, el) => {
     const src = $(el).attr('src');
     const inner = $(el).html();
@@ -25,18 +25,26 @@ function stripAds(html, baseUrl) {
     }
   });
 
+  // Remove hidden iframes often used for bot detection
   $('iframe').each((_, el) => {
-    if ($(el).attr('style')?.includes('visibility:hidden')) {
+    const style = $(el).attr('style') || '';
+    if (style.includes('visibility:hidden') || style.includes('display:none')) {
       $(el).remove();
     }
   });
 
-  $('link[href], script[src], img[src]').each((_, el) => {
-    const attr = el.name === 'link' ? 'href' : 'src';
+  // Convert all asset links (src and href) to absolute and route via proxy
+  $('[src], [href]').each((_, el) => {
+    const attr = el.attribs.src ? 'src' : 'href';
     const original = $(el).attr(attr);
-    if (original && !original.startsWith('data:')) {
-      const newUrl = new URL(original, baseUrl).href;
-      $(el).attr(attr, `/api/asset?url=${encodeURIComponent(newUrl)}`);
+    if (!original || original.startsWith('data:')) return;
+
+    try {
+      const resolved = new URL(original, baseUrl).href;
+      const proxied = `/asset?url=${encodeURIComponent(resolved)}`;
+      $(el).attr(attr, proxied);
+    } catch (e) {
+      // Ignore invalid URLs
     }
   });
 
@@ -54,7 +62,7 @@ export default async function handler(req, res) {
     res.setHeader('Content-Type', 'text/html');
     res.status(200).send(cleaned);
   } catch (err) {
-    console.error('ERROR:', err);
+    console.error('CLEAN ERROR:', err);
     res.status(500).send('Failed to fetch or clean page.');
   }
 }
