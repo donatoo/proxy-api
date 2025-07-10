@@ -1,13 +1,14 @@
 {
   "name": "strip-ads-proxy",
   "version": "1.0.0",
-  "type": "module",
+  "main": "server.js",
+  "type": "commonjs",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
-    "cheerio": "^1.0.0-rc.12",
     "express": "^4.18.2",
+    "cheerio": "^1.0.0-rc.12",
     "node-fetch": "^2.6.7"
   }
 }
