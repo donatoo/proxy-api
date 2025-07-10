@@ -1,0 +1,6 @@
+{
+  "rewrites": [
+    { "source": "/clean", "destination": "/api/clean" },
+    { "source": "/asset", "destination": "/api/asset" }
+  ]
+}
