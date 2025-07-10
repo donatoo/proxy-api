@@ -1,4 +1,4 @@
-import cheerio from 'cheerio';
+import * as cheerio from 'cheerio'; // ✅ FIXED
 import { URL } from 'url';
 
 const HEADERS = {
