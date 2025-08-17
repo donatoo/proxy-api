@@ -8,8 +8,6 @@ export default async function handler(req) {
 
   if (url.pathname === "/api/proxy" && url.searchParams.get("url")) {
     target = new URL(url.searchParams.get("url"));
-  } else if (url.pathname.includes("proxy")) {
-    target = new URL("https://hurricane.vidlvod.store" + url.pathname + url.search);
   } else {
     target = new URL("https://vidlink.pro" + url.pathname + url.search);
   }
